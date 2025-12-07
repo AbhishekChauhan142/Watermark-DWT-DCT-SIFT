@@ -255,83 +255,154 @@ def main():
                     st.download_button("💾 Download Image", buf, "watermarked.png", "image/png")
                     st.download_button("📂 Download SIFT Data", sift_data, "data.pkl")
 
-    # --- TAB 2: ATTACK SIMULATION ---
-    with tab2:
-        st.header("💥 Attack Laboratory")
+        # --- TAB 2: ATTACK SIMULATION (UPDATED) ---
+        with tab2:
+            st.header("💥 Attack Laboratory")
+            st.markdown("Simulate what happens if a hacker tries to destroy the watermark.")
 
-        # Determine source image
-        input_img = None
-        if st.session_state.watermarked_image is not None:
-            st.info("Using the Watermarked Image generated in Step 1.")
-            input_img = st.session_state.watermarked_image
-        else:
-            up_att = st.file_uploader("Or upload an image to attack", type=['png', 'jpg'])
-            if up_att: input_img = load_image(up_att)
+            # Determine source image
+            input_img = None
+            if st.session_state.watermarked_image is not None:
+                st.info("✅ Using the Watermarked Image generated in Step 1.")
+                input_img = st.session_state.watermarked_image
+            else:
+                up_att = st.file_uploader("Or upload an image to attack", type=['png', 'jpg'],
+                                          key="upload_attack_input")
+                if up_att: input_img = load_image(up_att)
 
-        if input_img is not None:
-            st.image(input_img, caption="Input for Attack", width=200)
+            if input_img is not None:
+                # Layout: Controls on left, Image on right
+                col_controls, col_display = st.columns([1, 2])
 
-            attack_type = st.selectbox("Select Attack Type",
-                                       ["None", "Gaussian Noise", "Salt & Pepper", "Rotation", "Cropping (Top-Left)",
-                                        "JPEG Compression"])
+                with col_controls:
+                    st.subheader("Choose Attack")
+                    attack_type = st.selectbox("Type",
+                                               ["None", "Gaussian Noise", "Salt & Pepper", "Rotation",
+                                                "Cropping (Top-Left)", "JPEG Compression"])
 
-            attacked_res = input_img.copy()
+                    # Default to input
+                    attacked_res = input_img.copy()
 
-            # Attack Parameters UI
-            if attack_type == "Gaussian Noise":
-                var = st.slider("Variance", 0, 100, 20)
-                attacked_res = AttackEngine.apply_gaussian_noise(input_img, var)
-            elif attack_type == "Salt & Pepper":
-                prob = st.slider("Noise Probability", 0.0, 0.1, 0.02)
-                attacked_res = AttackEngine.apply_salt_pepper(input_img, prob)
-            elif attack_type == "Rotation":
-                angle = st.slider("Angle (Degrees)", -45, 45, 10)
-                attacked_res = AttackEngine.apply_rotation(input_img, angle)
-            elif attack_type == "Cropping (Top-Left)":
-                perc = st.slider("Crop Percentage", 0.0, 0.5, 0.2)
-                attacked_res = AttackEngine.apply_cropping(input_img, perc)
-            elif attack_type == "JPEG Compression":
-                qual = st.slider("Quality (Lower is worse)", 1, 100, 30)
-                attacked_res = AttackEngine.apply_jpeg_compression(input_img, qual)
+                    # Attack Parameters UI
+                    if attack_type == "Gaussian Noise":
+                        var = st.slider("Variance", 0, 100, 20)
+                        attacked_res = AttackEngine.apply_gaussian_noise(input_img, var)
+                    elif attack_type == "Salt & Pepper":
+                        prob = st.slider("Noise Prob", 0.0, 0.1, 0.02)
+                        attacked_res = AttackEngine.apply_salt_pepper(input_img, prob)
+                    elif attack_type == "Rotation":
+                        angle = st.slider("Degrees", -45, 45, 10)
+                        attacked_res = AttackEngine.apply_rotation(input_img, angle)
+                    elif attack_type == "Cropping (Top-Left)":
+                        perc = st.slider("Crop %", 0.0, 0.5, 0.2)
+                        attacked_res = AttackEngine.apply_cropping(input_img, perc)
+                    elif attack_type == "JPEG Compression":
+                        qual = st.slider("Quality (1=Worst)", 1, 100, 30)
+                        attacked_res = AttackEngine.apply_jpeg_compression(input_img, qual)
 
-            st.image(attacked_res, caption=f"Result after {attack_type}", width=250)
+                with col_display:
+                    st.image(attacked_res, caption=f"Result after {attack_type}", width=400)
 
-            if st.button("Use this for Extraction"):
-                st.session_state.attacked_image = attacked_res
-                st.success("Image sent to Extraction tab!")
+                    # ACTION BUTTONS
+                    st.divider()
+                    btn_col1, btn_col2 = st.columns(2)
 
-    # --- TAB 3: EXTRACTION ---
-    with tab3:
-        st.header("🕵️ Extraction")
+                    # 1. Send to Extraction Tab (Internal Memory)
+                    with btn_col1:
+                        if st.button("➡️ Use for Extraction", help="Send this image directly to Tab 3"):
+                            st.session_state.attacked_image = attacked_res
+                            st.success("Sent to Tab 3!")
 
-        # 1. Image Source
-        img_to_extract = None
-        if st.session_state.attacked_image is not None:
-            st.success("Loaded attacked image from Step 2.")
-            img_to_extract = st.session_state.attacked_image
-        else:
-            u_ext = st.file_uploader("Upload Suspect Image", type=['png', 'jpg'])
-            if u_ext: img_to_extract = load_image(u_ext)
+                    # 2. Download to Computer (File)
+                    with btn_col2:
+                        # Convert numpy array to PNG bytes
+                        is_success, buffer = cv2.imencode(".png", attacked_res)
+                        io_buf = io.BytesIO(buffer)
 
-        # 2. SIFT Source
-        sift_to_use = None
-        if st.session_state.sift_data is not None:
-            st.success("Loaded SIFT data from Step 1.")
-            sift_to_use = st.session_state.sift_data
-        else:
-            u_sift = st.file_uploader("Upload SIFT .pkl file", type=['pkl'])
-            if u_sift: sift_to_use = u_sift.read()
+                        st.download_button(
+                            label="💾 Download Image",
+                            data=io_buf,
+                            file_name=f"attacked_{attack_type}.png",
+                            mime="image/png"
+                        )
 
-        if img_to_extract is not None and sift_to_use is not None:
-            if st.button("Extract Watermark"):
-                engine = WatermarkEngine()
-                with st.spinner("Correcting Geometric Distortions & Extracting..."):
-                    try:
-                        res = engine.extract(img_to_extract, sift_to_use, secret_key)
-                        st.subheader("Extracted Watermark:")
-                        st.image(res, width=200, output_format='PNG')
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+        # ================= TAB 3: EXTRACTION (UPDATED) =================
+        with tab3:
+            st.header("🕵️ Extraction Lab")
+            st.markdown("Recover the watermark even if the image was rotated, scaled, or noised.")
+
+            col1, col2 = st.columns(2)
+
+            # 1. Image Source
+            img_to_extract = None
+            with col1:
+                st.subheader("1. Input Image")
+                if st.session_state.attacked_image is not None:
+                    st.info("Using image from Attack Lab")
+                    img_to_extract = st.session_state.attacked_image
+                    st.image(img_to_extract, width=200, caption="Attacked Input")
+                else:
+                    u_ext = st.file_uploader("Upload Attacked Image", type=['png', 'jpg'])
+                    if u_ext:
+                        img_to_extract = load_image(u_ext)
+                        st.image(img_to_extract, width=200, caption="Uploaded Input")
+
+            # 2. SIFT Source
+            sift_to_use = None
+            with col2:
+                st.subheader("2. Recovery Data")
+                if st.session_state.sift_data is not None:
+                    st.info("Using SIFT data from Embed Lab")
+                    sift_to_use = st.session_state.sift_data
+                else:
+                    u_sift = st.file_uploader("Upload .pkl File", type=['pkl'],
+                                              help="Required to undo rotation/scaling")
+                    if u_sift: sift_to_use = u_sift.read()
+
+            # 3. Extraction Controls
+            st.divider()
+            col_ex1, col_ex2 = st.columns(2)
+            with col_ex1:
+                key_input = st.number_input("Secret Key", value=1234, key="key_ext_final")
+            with col_ex2:
+                use_denoise = st.checkbox("Apply Noise Filter", value=True,
+                                          help="Removes white noise dots from extracted watermark")
+
+            if img_to_extract is not None and sift_to_use is not None:
+                if st.button("🔍 Analyze & Extract"):
+                    engine = WatermarkEngine()
+                    with st.spinner("1. Matching SIFT Features... 2. Correcting Geometry... 3. Decrypting..."):
+                        try:
+                            # We need to modify extract to return the corrected image for visualization
+                            # NOTE: This requires a slight tweak to the Class method below,
+                            # but for now we run the standard extract.
+
+                            # Run Extraction
+                            raw_wm = engine.extract(img_to_extract, sift_to_use, int(key_input))
+
+                            # Post-Processing (Denoise)
+                            final_wm = raw_wm
+                            if use_denoise:
+                                # Median Blur is great for removing salt-and-pepper noise from binary images
+                                final_wm = cv2.medianBlur(raw_wm, 3)
+
+                            # Display Results
+                            st.success("Extraction Complete")
+
+                            res_col1, res_col2 = st.columns(2)
+                            with res_col1:
+                                st.image(raw_wm, caption="Raw Extracted Signal", width=250, clamp=True)
+                            with res_col2:
+                                st.image(final_wm, caption="Cleaned Watermark", width=250, clamp=True)
+
+                            # Download
+                            buf = cv2.imencode('.png', final_wm)[1].tobytes()
+                            st.download_button("💾 Download Watermark", buf, "extracted_watermark.png", "image/png")
+
+                        except Exception as e:
+                            st.error(f"Extraction failed. The attack might be too severe. Error: {str(e)}")
+            else:
+                st.warning("Please provide both the Attacked Image and the .pkl file.")
 
 
 if __name__ == "__main__":
